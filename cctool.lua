@@ -154,7 +154,13 @@ function TreeFarm:_plant()
             os.sleep(1)
         end
     end
-    turtle.placeDown()
+    if (not turtle.placeDown()) then
+        print("Something is obstructing planting. Please remove it.")
+        while (not turtle.placeDown()) do
+            os.sleep(1)
+        end
+        print("Detected removal of obstruction.")
+    end
 end
 
 function TreeFarm:_harvest()
@@ -169,12 +175,16 @@ function TreeFarm:_harvest()
     -- Go back to original position
     top_z = self.tm.position.z
     dz = top_z - current_z
-    for i = 0, dz, 1 do
-        self.tm:down()
+    if (dz ~= 0) then
+        for i = 1, dz, 1 do
+            self.tm:down()
+        end
     end
 
     -- Remove stump if it's there
-    if (turtle.detectDown()) then
+    turtle.select(1)
+    if (turtle.detectDown() and not turtle.compareDown()) then
+        print("Found stump")
         turtle.digDown()
     end
 end
@@ -190,13 +200,14 @@ function TreeFarm:_farm_loop()
         if (turtle.detectDown()) then
             turtle.select(1)
             if (not turtle.compareDown()) then
+                print("Found something where a sapling should be")
                 self:_harvest() -- make sure this works how it should from here
             end
         end
 
         self:_plant()
 
-        if (i ~= self.length) then
+        if ((i ~= self.length) and (self.spacing ~= 0)) then
             for j = 1, self.spacing, 1 do
                 self.tm:forward()
                 if (turtle.detectDown()) then
@@ -205,13 +216,13 @@ function TreeFarm:_farm_loop()
             end
         end
     end
-    
+
     self.tm:forward()
     self.tm:turn_left()
     self.tm:turn_left()
 
     while (not turtle.detect()) do
-        os.sleep(3)
+        os.sleep(1)
     end
 end
 
@@ -221,5 +232,5 @@ function TreeFarm:start()
     end
 end
     
-tf = TreeFarm:new(4, 1)
+tf = TreeFarm:new(4, 2)
 tf:start()
