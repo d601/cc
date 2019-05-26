@@ -126,6 +126,21 @@ function TurtleManager:turn_right()
     self.facing = math.max(((self.facing + 1) % 5), 1)
 end
 
+function TurtleManager:_consolidate_inventory()
+    for i = 1, 16, 1 do
+        if (turtle.getItemCount(i) > 0) then
+            turtle.select(i)
+            for j = i, 16, 1 do
+                if (turtle.compareTo(j)) then
+                    turtle.select(j)
+                    turtle.transferTo(i)
+                    turtle.select(i)
+                end
+            end
+        end
+    end
+end
+
 --------------------------------------------------------------------------------
 -- TreeFarm
 --------------------------------------------------------------------------------
@@ -134,6 +149,7 @@ TreeFarm = {}
 
 function TreeFarm:new(length, spacing)
     o = {
+        iteration = 0,
         length = length,
         spacing = spacing,
         tm = TurtleManager:new()
@@ -141,6 +157,14 @@ function TreeFarm:new(length, spacing)
     setmetatable(o, self)
     self.__index = self
     return o
+end
+
+function TreeFarm:_detect_sapling_down()
+    result, data = turtle.inspectDown()
+    if (not result) then
+        return false
+    end
+    return data.name:match(".*sapling.*") ~= nil
 end
 
 function TreeFarm:_plant()
@@ -182,9 +206,7 @@ function TreeFarm:_harvest()
     end
 
     -- Remove stump if it's there
-    turtle.select(1)
-    if (turtle.detectDown() and not turtle.compareDown()) then
-        print("Found stump")
+    if (turtle.detectDown() and not self:_detect_sapling_down()) then
         turtle.digDown()
     end
 end
@@ -197,20 +219,26 @@ function TreeFarm:_farm_loop()
 
         self.tm:forward()
 
-        if (turtle.detectDown()) then
-            turtle.select(1)
-            if (not turtle.compareDown()) then
-                print("Found something where a sapling should be")
-                self:_harvest() -- make sure this works how it should from here
-            end
+        if (turtle.detectDown() and not self:_detect_sapling_down()) then
+            self:_harvest()
         end
 
         self:_plant()
 
         if ((i ~= self.length) and (self.spacing ~= 0)) then
             for j = 1, self.spacing, 1 do
+                if (turtle.detect()) then
+                    turtle.dig()
+                end
                 self.tm:forward()
+                -- Clean up old saplings from possibly other stuff
+                -- Don't do detectUp as that will waste fuel cleaning up leaves
                 if (turtle.detectDown()) then
+
+                    -- Do this here, because _harvest has a builtin check against saplings
+                    -- Can't figure out if there's some cleaner way of doing this
+                    -- (Without the check, you end up replacing saplings with stuff above them)
+                    turtle.digDown()
                     self:_harvest()
                 end
             end
@@ -218,19 +246,51 @@ function TreeFarm:_farm_loop()
     end
 
     self.tm:forward()
+
+    -- Try to grab a stack of the above and to the left inventories
+    -- (Inventories placed above will obstruct tree growth)
+    -- Hopefully this gets us enough saplings and charcoal
+    -- Excess will be returned to below
+    turtle.suck()
     self.tm:turn_left()
+    turtle.suck()
     self.tm:turn_left()
 
-    while (not turtle.detect()) do
+    self.tm:_consolidate_inventory()
+
+    self.iteration = self.iteration + 1
+    if ((self.iteration % 2) == 0) then
+        self:_empty_inventory()
+    end
+
+    start_ts = os.epoch("utc")
+    dt = 0
+
+    -- Turn around once either 4m has passed or a tree has grown in front
+    while ((not turtle.detect()) and  (dt < 240)) do
         os.sleep(1)
+        end_ts = os.epoch("utc")
+        dt = (end_ts - start_ts) / 1000
+    end
+end
+
+
+
+function TreeFarm:_empty_inventory()
+    for i = 3, 16, 1 do
+        if (turtle.getItemCount(i) > 0) then
+            turtle.select(i)
+            turtle.dropDown()
+        end
     end
 end
 
 function TreeFarm:start()
+    self:_empty_inventory()
     while true do
         self:_farm_loop()
     end
 end
     
-tf = TreeFarm:new(4, 2)
+tf = TreeFarm:new(16, 1)
 tf:start()
